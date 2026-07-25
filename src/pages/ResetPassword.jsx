@@ -1,0 +1,129 @@
+import React, { useState, useEffect } from 'react';
+import { supabase } from '@/lib/supabaseClient';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Music, Lock, CheckCircle } from 'lucide-react';
+import { useToast } from '@/components/ui/use-toast';
+
+export default function ResetPassword() {
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [done, setDone] = useState(false);
+  const [validSession, setValidSession] = useState(false);
+  const { toast } = useToast();
+
+  useEffect(() => {
+    // Supabase automatically handles the token from the URL
+    supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setValidSession(true);
+      }
+    });
+  }, []);
+
+  const handleReset = async (e) => {
+    e.preventDefault();
+    if (password !== confirmPassword) {
+      toast({
+        variant: 'destructive',
+        title: 'Passwords do not match',
+        description: 'Please make sure both passwords are the same.',
+      });
+      return;
+    }
+    if (password.length < 6) {
+      toast({
+        variant: 'destructive',
+        title: 'Password too short',
+        description: 'Password must be at least 6 characters.',
+      });
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ password });
+      if (error) throw error;
+      setDone(true);
+      toast({
+        title: 'Password updated!',
+        description: 'You can now sign in with your new password.',
+      });
+      setTimeout(() => { window.location.href = '/auth'; }, 3000);
+    } catch (error) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: error.message,
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-background p-4 font-sans">
+      <div className="w-full max-w-md space-y-8 bg-card border border-border/50 p-8 rounded-2xl shadow-xl">
+
+        <div className="text-center space-y-2">
+          <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center mx-auto text-primary">
+            <Music className="w-6 h-6" />
+          </div>
+          <h2 className="text-2xl font-bold tracking-tight text-foreground">
+            {done ? 'Password Updated!' : 'Set New Password'}
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            {done
+              ? 'Redirecting you to sign in...'
+              : 'Enter your new password below'}
+          </p>
+        </div>
+
+        {done ? (
+          <div className="flex justify-center py-4">
+            <CheckCircle className="w-16 h-16 text-green-500" />
+          </div>
+        ) : (
+          <form onSubmit={handleReset} className="space-y-4">
+            <div className="space-y-1 relative">
+              <Lock className="absolute left-3 top-9 w-4 h-4 text-muted-foreground" />
+              <label className="text-xs font-medium text-muted-foreground">New Password</label>
+              <Input
+                type="password"
+                required
+                placeholder="••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="pl-9 bg-background/50"
+              />
+            </div>
+
+            <div className="space-y-1 relative">
+              <Lock className="absolute left-3 top-9 w-4 h-4 text-muted-foreground" />
+              <label className="text-xs font-medium text-muted-foreground">Confirm New Password</label>
+              <Input
+                type="password"
+                required
+                placeholder="••••••••"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                className="pl-9 bg-background/50"
+              />
+            </div>
+
+            <Button type="submit" className="w-full font-medium mt-2" disabled={loading}>
+              {loading ? 'Updating...' : 'Update Password'}
+            </Button>
+
+            <div className="text-center">
+              <a href="/auth" className="text-xs text-primary hover:underline">
+                Back to Sign In
+              </a>
+            </div>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}

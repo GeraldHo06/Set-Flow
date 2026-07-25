@@ -1,0 +1,112 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --font-inter: 'Inter', sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+
+    --background: 225 15% 8%;
+    --foreground: 40 10% 92%;
+    --card: 225 14% 11%;
+    --card-foreground: 40 10% 92%;
+    --popover: 225 14% 11%;
+    --popover-foreground: 40 10% 92%;
+    --primary: 38 92% 55%;
+    --primary-foreground: 225 15% 8%;
+    --secondary: 225 12% 16%;
+    --secondary-foreground: 40 10% 82%;
+    --muted: 225 12% 16%;
+    --muted-foreground: 225 8% 52%;
+    --accent: 38 60% 20%;
+    --accent-foreground: 38 92% 65%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 225 12% 18%;
+    --input: 225 12% 18%;
+    --ring: 38 92% 55%;
+    --chart-1: 38 92% 55%;
+    --chart-2: 200 70% 50%;
+    --chart-3: 150 60% 45%;
+    --chart-4: 280 65% 60%;
+    --chart-5: 340 75% 55%;
+    --radius: 0.75rem;
+    --sidebar-background: 225 14% 9%;
+    --sidebar-foreground: 40 10% 82%;
+    --sidebar-primary: 38 92% 55%;
+    --sidebar-primary-foreground: 225 15% 8%;
+    --sidebar-accent: 225 12% 14%;
+    --sidebar-accent-foreground: 40 10% 92%;
+    --sidebar-border: 225 12% 16%;
+    --sidebar-ring: 38 92% 55%;
+  }
+
+  .dark {
+    --background: 225 15% 8%;
+    --foreground: 40 10% 92%;
+    --card: 225 14% 11%;
+    --card-foreground: 40 10% 92%;
+    --popover: 225 14% 11%;
+    --popover-foreground: 40 10% 92%;
+    --primary: 38 92% 55%;
+    --primary-foreground: 225 15% 8%;
+    --secondary: 225 12% 16%;
+    --secondary-foreground: 40 10% 82%;
+    --muted: 225 12% 16%;
+    --muted-foreground: 225 8% 52%;
+    --accent: 38 60% 20%;
+    --accent-foreground: 38 92% 65%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 225 12% 18%;
+    --input: 225 12% 18%;
+    --ring: 38 92% 55%;
+    --chart-1: 38 92% 55%;
+    --chart-2: 200 70% 50%;
+    --chart-3: 150 60% 45%;
+    --chart-4: 280 65% 60%;
+    --chart-5: 340 75% 55%;
+    --sidebar-background: 225 14% 9%;
+    --sidebar-foreground: 40 10% 82%;
+    --sidebar-primary: 38 92% 55%;
+    --sidebar-primary-foreground: 225 15% 8%;
+    --sidebar-accent: 225 12% 14%;
+    --sidebar-accent-foreground: 40 10% 92%;
+    --sidebar-border: 225 12% 16%;
+    --sidebar-ring: 38 92% 55%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground font-inter;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: hsl(225 14% 11%);
+}
+::-webkit-scrollbar-thumb {
+  background: hsl(225 12% 24%);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(225 12% 32%);
+}
+
+/* PDF iframe styling */
+.pdf-viewer-frame {
+  border: none;
+  border-radius: 0.5rem;
+}
