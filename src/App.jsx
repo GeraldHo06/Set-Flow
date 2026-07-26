@@ -15,6 +15,7 @@ import React from 'react';
 import Groups from '@/pages/Groups';
 import ResetPassword from '@/pages/ResetPassword';
 import { PlayerProvider } from '@/lib/PlayerContext';
+import GroupDetail from '@/pages/GroupDetail';
 
 const AuthenticatedApp = () => {
   const { session, isLoadingAuth } = useAuth();
@@ -39,6 +40,7 @@ const AuthenticatedApp = () => {
         <Route path="/practice/:id" element={<Practice />} />
         <Route path="/library" element={<Library />} />
         <Route path="/groups" element={<Groups />} />
+        <Route path="/groups/:id" element={<GroupDetail />} />
       </Route>
 
       <Route path="*" element={<PageNotFound />} />
