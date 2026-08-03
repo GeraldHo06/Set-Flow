@@ -16,7 +16,7 @@ export default function Practice() {
   const [showNotes, setShowNotes] = useState(false);
   const [notes, setNotes] = useState('');
   const queryClient = useQueryClient();
-  const { loadSong } = usePlayer();
+  const { loadSong, currentSong } = usePlayer();
 
   // 1. Fetch the single song by ID from your live Supabase table
   const { data: song, isLoading } = useQuery({
@@ -37,16 +37,19 @@ export default function Practice() {
 
   useEffect(() => {
     console.log('useEffect triggered, song:', song?.title, 'audio_url:', song?.audio_url);
-    if (song?.audio_url) {
+    const isSameSong = currentSong?.id === song?.id;
+    const isSameAudio = currentSong?.audio_url === song?.audio_url;
+
+    if (song && (!isSameSong || !isSameAudio)) {
       loadSong({
         id: song.id,
         title: song.title,
         artist: song.artist,
         audio_url: song.audio_url,
         setlist_id: song.setlist_id,
-      });
+      }, song.stems || []);
     }
-  }, [song?.id, song?.audio_url]);
+  }, [song?.id, song?.audio_url, currentSong?.id, currentSong?.audio_url]);
 
   // 2. Setup Mutation to push updates (notes, URLs, files) straight to Supabase
   const updateMutation = useMutation({
@@ -107,7 +110,7 @@ export default function Practice() {
   }
 
   return (
-    <div className="p-4 lg:p-8 max-w-[1600px] mx-auto pb-24 lg:pb-8">
+    <div className="p-4 lg:p-8 max-w-[1600px] mx-auto pb-36 lg:pb-8">
       {/* Header */}
       <div className="flex items-start justify-between mb-6">
         <div className="flex items-start gap-3">

@@ -24,7 +24,7 @@ export default function MiniPlayer() {
   const progress = duration ? (currentTime / duration) * 100 : 0;
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 lg:left-64 z-50 bg-card/95 backdrop-blur-xl border-t border-border shadow-2xl">
+    <div className="fixed bottom-16 lg:bottom-0 left-0 right-0 lg:left-64 z-50 bg-card/95 backdrop-blur-xl border-t border-border shadow-2xl">
       {/* Seek bar at very top of mini player */}
       <div className="w-full h-1 bg-secondary cursor-pointer" onClick={(e) => {
         const rect = e.currentTarget.getBoundingClientRect();

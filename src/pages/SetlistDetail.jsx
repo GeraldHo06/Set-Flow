@@ -231,7 +231,7 @@ export default function SetlistDetail() {
   };
 
   return (
-    <div className="p-6 lg:p-10 max-w-4xl mx-auto pb-24 lg:pb-10 font-sans">
+    <div className="p-6 lg:p-10 max-w-4xl mx-auto pb-36 lg:pb-10 font-sans">
       {/* Header Panel */}
       <div className="flex items-start justify-between mb-8">
         <div className="flex items-start gap-4">

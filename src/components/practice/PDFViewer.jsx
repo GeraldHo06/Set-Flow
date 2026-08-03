@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { FileText, Upload, Maximize2, X, Trash2 } from 'lucide-react';
+import { FileText, Upload, Maximize2, X, Trash2, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/lib/supabaseClient';
 
@@ -143,6 +143,11 @@ export default function PDFViewer({ scoreUrl, onUploadScore, onRemoveScore }) {
             </Button>
             <input type="file" accept=".pdf" className="hidden" onChange={handleFileUpload} />
           </label>
+          <a href={scoreUrl} target="_blank" rel="noopener noreferrer">
+            <Button variant="ghost" size="icon" className="h-7 w-7" title="Open PDF in new tab">
+              <ExternalLink className="w-3.5 h-3.5" />
+            </Button>
+          </a>
           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setIsFullscreen(true)}>
             <Maximize2 className="w-3.5 h-3.5" />
           </Button>

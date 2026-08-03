@@ -108,7 +108,7 @@ export default function Groups() {
   };
 
   return (
-    <div className="p-6 lg:p-10 max-w-4xl mx-auto pb-24 lg:pb-10 font-sans">
+    <div className="p-6 lg:p-10 max-w-4xl mx-auto pb-36 lg:pb-10 font-sans">
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-foreground tracking-tight">Bands & Groups</h1>
         <p className="text-sm text-muted-foreground mt-1">Manage your collaborative music rooms and invite members.</p>

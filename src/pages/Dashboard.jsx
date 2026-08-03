@@ -47,7 +47,7 @@ export default function Dashboard() {
   });
 
   return (
-    <div className="p-6 lg:p-10 max-w-6xl mx-auto pb-24 lg:pb-10">
+    <div className="p-6 lg:p-10 max-w-6xl mx-auto pb-36 lg:pb-10">
       {/* Header */}
       <div className="mb-10">
         <h1 className="text-3xl font-bold text-foreground tracking-tight">Welcome back</h1>

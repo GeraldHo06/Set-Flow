@@ -25,6 +25,11 @@ export const AuthProvider = ({ children }) => {
       
       if (_event === 'SIGNED_OUT') {
         setAuthError({ type: 'auth_required' });
+      } else if (_event === 'PASSWORD_RECOVERY') {
+        setAuthError(null);
+        if (window.location.pathname !== '/reset-password') {
+          window.location.href = '/reset-password';
+        }
       } else {
         setAuthError(null);
       }

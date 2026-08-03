@@ -1,14 +1,13 @@
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabaseClient';
-import { Music, Play, Pause, Search, Disc } from 'lucide-react';
+import { Music, Play, Pause, Search } from 'lucide-react';
 import { Input } from '@/components/ui/input';
+import { usePlayer } from '@/lib/PlayerContext';
 
 export default function Library() {
   const [search, setSearch] = useState('');
-  const [currentTrack, setCurrentTrack] = useState(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [audioElement] = useState(new Audio());
+  const { currentSong, isPlaying, play, togglePlay, loadSong } = usePlayer();
 
   // 1. Fetch songs belonging to the user OR their active band groups
   const { data: songs = [], isLoading } = useQuery({
@@ -39,21 +38,18 @@ export default function Library() {
   });
 
   // 2. Simple audio playback toggle mechanics
-  const handlePlayToggle = (track) => {
-    if (currentTrack?.id === track.id) {
-      if (isPlaying) {
-        audioElement.pause();
-        setIsPlaying(false);
-      } else {
-        audioElement.play().catch(err => console.log("Playback error:", err));
-        setIsPlaying(true);
-      }
+  const handlePlayToggle = async (track) => {
+    if (currentSong?.id === track.id) {
+      togglePlay();
     } else {
-      // Stream a completely new audio track source
-      audioElement.src = track.audio_url;
-      audioElement.play().catch(err => console.log("Playback error:", err));
-      setCurrentTrack(track);
-      setIsPlaying(true);
+      await loadSong({
+        id: track.id,
+        title: track.title,
+        artist: track.artist,
+        audio_url: track.audio_url,
+        setlist_id: track.setlist_id,
+      }, track.stems || []);
+      play();
     }
   };
 
@@ -63,7 +59,7 @@ export default function Library() {
   );
 
   return (
-    <div className="p-6 lg:p-10 max-w-6xl mx-auto pb-32 font-sans">
+    <div className="p-6 lg:p-10 max-w-6xl mx-auto pb-36 lg:pb-10 font-sans">
       {/* Page Layout Title Header */}
       <div className="mb-8">
         <h1 className="text-2xl font-bold tracking-tight text-foreground">Music Library</h1>
@@ -100,7 +96,7 @@ export default function Library() {
       ) : (
         <div className="space-y-2">
           {filteredSongs.map((song) => {
-            const isThisPlaying = currentTrack?.id === song.id && isPlaying;
+            const isThisPlaying = currentSong?.id === song.id && isPlaying;
             return (
               <div 
                 key={song.id} 
@@ -139,27 +135,6 @@ export default function Library() {
               </div>
             );
           })}
-        </div>
-      )}
-
-      {/* Sticky Bottom Floating Audio Playbar Panel */}
-      {currentTrack && (
-        <div className="fixed bottom-20 left-4 right-4 md:left-72 md:right-8 bg-card/90 backdrop-blur-xl border border-border p-4 rounded-2xl shadow-xl flex items-center justify-between z-40 transition-all animate-in slide-in-from-bottom-4 duration-300">
-          <div className="flex items-center gap-3">
-            <div className={`w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary ${isPlaying ? 'animate-spin' : ''}`} style={{ animationDuration: '8s' }}>
-              <Disc className="w-5 h-5" />
-            </div>
-            <div>
-              <p className="text-xs font-semibold text-foreground leading-none">{currentTrack.title}</p>
-              <p className="text-[10px] text-muted-foreground mt-1">Playing from SetFlow Audio Cloud</p>
-            </div>
-          </div>
-          <button 
-            onClick={() => handlePlayToggle(currentTrack)}
-            className="w-8 h-8 rounded-full bg-foreground text-background flex items-center justify-center hover:scale-105 active:scale-95 transition-all"
-          >
-            {isPlaying ? <Pause className="w-3.5 h-3.5 fill-current" /> : <Play className="w-3.5 h-3.5 fill-current ml-0.5" />}
-          </button>
         </div>
       )}
     </div>
