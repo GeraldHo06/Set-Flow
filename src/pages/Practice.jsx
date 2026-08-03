@@ -35,6 +35,27 @@ export default function Practice() {
     enabled: !!songId,
   });
 
+  // 1b. Fetch User Role in Group (if song is associated with a group)
+  const { data: userRole } = useQuery({
+    queryKey: ['group-user-role', song?.group_id],
+    queryFn: async () => {
+      if (!song?.group_id) return 'owner';
+      const { data: { user } } = await supabase.auth.getUser();
+      const { data, error } = await supabase
+        .from('group_members')
+        .select('role')
+        .eq('group_id', song.group_id)
+        .eq('profile_id', user.id)
+        .maybeSingle();
+      
+      if (error) throw error;
+      return data?.role || 'member';
+    },
+    enabled: !!song?.group_id,
+  });
+
+  const canEdit = !song?.group_id || userRole === 'leader';
+
   useEffect(() => {
     console.log('useEffect triggered, song:', song?.title, 'audio_url:', song?.audio_url);
     const isSameSong = currentSong?.id === song?.id;
@@ -157,16 +178,19 @@ export default function Practice() {
         <div className="mb-6 bg-card rounded-xl border border-border/50 p-4">
           <div className="flex items-center justify-between mb-2">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Practice Notes</p>
-            <Button size="sm" variant="ghost" className="gap-1 text-xs h-7" onClick={handleSaveNotes}>
-              <Save className="w-3 h-3" />
-              Save
-            </Button>
+            {canEdit && (
+              <Button size="sm" variant="ghost" className="gap-1 text-xs h-7" onClick={handleSaveNotes}>
+                <Save className="w-3 h-3" />
+                Save
+              </Button>
+            )}
           </div>
           <Textarea
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-            placeholder="Write your practice notes here..."
+            placeholder={canEdit ? "Write your practice notes here..." : "No practice notes added yet."}
             className="min-h-[80px] bg-background/50"
+            readOnly={!canEdit}
           />
         </div>
       )}
@@ -179,6 +203,7 @@ export default function Practice() {
             scoreUrl={song.score_url}
             onUploadScore={handleUploadScore}
             onRemoveScore={handleRemoveScore}
+            canEdit={canEdit}
           />
         </div>
 
@@ -191,6 +216,7 @@ export default function Practice() {
             onRemoveAudio={handleRemoveAudio}
             onUploadStem={handleUploadStem}
             onRemoveStem={handleRemoveStem}
+            canEdit={canEdit}
           />
           <Metronome initialBpm={song.bpm || 120} />
         </div>

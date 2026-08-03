@@ -22,7 +22,7 @@ async function uploadAudioFile(file) {
   return publicUrl;
 }
 
-export default function AudioPlayer({ audioUrl, stems = [], onUploadAudio, onRemoveAudio, onUploadStem, onRemoveStem }) {
+export default function AudioPlayer({ audioUrl, stems = [], onUploadAudio, onRemoveAudio, onUploadStem, onRemoveStem, canEdit = true }) {
   const {
     isPlaying, currentTime, duration, volume,
     stemVolumes, stemMasterVolume, stemsLoaded,
@@ -95,10 +95,10 @@ export default function AudioPlayer({ audioUrl, stems = [], onUploadAudio, onRem
 
   return (
     <div
-      className={`bg-card rounded-xl border p-5 transition-colors ${isDraggingAudio ? 'border-primary/60 bg-primary/5' : 'border-border/50'}`}
-      onDragOver={(e) => { e.preventDefault(); setIsDraggingAudio(true); }}
+      className={`bg-card rounded-xl border p-5 transition-colors ${isDraggingAudio && canEdit ? 'border-primary/60 bg-primary/5' : 'border-border/50'}`}
+      onDragOver={(e) => { if (!canEdit) return; e.preventDefault(); setIsDraggingAudio(true); }}
       onDragLeave={() => setIsDraggingAudio(false)}
-      onDrop={handleAudioDrop}
+      onDrop={(e) => { if (!canEdit) return; handleAudioDrop(e); }}
     >
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
@@ -106,23 +106,25 @@ export default function AudioPlayer({ audioUrl, stems = [], onUploadAudio, onRem
           <Music2 className="w-4 h-4 text-primary" />
           Audio Player
         </h3>
-        <div className="flex items-center gap-1">
-          {audioUrl && (
-            <Button variant="ghost" size="sm" className="gap-1 text-xs h-7 text-destructive hover:text-destructive"
-              onClick={() => onRemoveAudio?.()}>
-              <Trash2 className="w-3 h-3" />Remove
-            </Button>
-          )}
-          <label className="cursor-pointer">
-            <Button variant="ghost" size="sm" className="gap-2 text-xs h-7" disabled={isUploading} asChild>
-              <span>
-                <Upload className="w-3 h-3" />
-                {isUploading ? 'Uploading...' : isDraggingAudio ? 'Drop file' : 'Upload Audio'}
-              </span>
-            </Button>
-            <input type="file" accept="audio/*" className="hidden" onChange={handleFileUpload} />
-          </label>
-        </div>
+        {canEdit && (
+          <div className="flex items-center gap-1">
+            {audioUrl && (
+              <Button variant="ghost" size="sm" className="gap-1 text-xs h-7 text-destructive hover:text-destructive"
+                onClick={() => onRemoveAudio?.()}>
+                <Trash2 className="w-3 h-3" />Remove
+              </Button>
+            )}
+            <label className="cursor-pointer">
+              <Button variant="ghost" size="sm" className="gap-2 text-xs h-7" disabled={isUploading} asChild>
+                <span>
+                  <Upload className="w-3 h-3" />
+                  {isUploading ? 'Uploading...' : isDraggingAudio ? 'Drop file' : 'Upload Audio'}
+                </span>
+              </Button>
+              <input type="file" accept="audio/*" className="hidden" onChange={handleFileUpload} />
+            </label>
+          </div>
+        )}
       </div>
 
       {/* Progress */}
@@ -192,12 +194,12 @@ export default function AudioPlayer({ audioUrl, stems = [], onUploadAudio, onRem
           ]).map((stem, idx) => (
             <div key={idx}
               className={`flex items-center gap-3 p-2.5 rounded-lg border transition-colors ${
-                draggingStemIdx === idx ? 'border-primary/60 bg-primary/5 text-primary'
+                draggingStemIdx === idx && canEdit ? 'border-primary/60 bg-primary/5 text-primary'
                 : stem.url ? stemColors[idx % stemColors.length]
                 : 'bg-secondary/30 text-muted-foreground border-border/50'}`}
-              onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDraggingStemIdx(idx); }}
+              onDragOver={(e) => { if (!canEdit) return; e.preventDefault(); e.stopPropagation(); setDraggingStemIdx(idx); }}
               onDragLeave={() => setDraggingStemIdx(null)}
-              onDrop={(e) => handleStemDrop(e, idx)}
+              onDrop={(e) => { if (!canEdit) return; handleStemDrop(e, idx); }}
             >
               <span className="text-xs font-medium w-16 truncate">{stem.name}</span>
               {stem.url ? (
@@ -205,17 +207,21 @@ export default function AudioPlayer({ audioUrl, stems = [], onUploadAudio, onRem
                   onValueChange={(v) => changeStemVolume(idx, v[0])} className="flex-1" />
               ) : (
                 <div className="flex-1 flex items-center justify-center">
-                  <label className="cursor-pointer">
-                    <Button variant="ghost" size="sm" className="h-6 text-[10px] gap-1"
-                      disabled={uploadingStemIdx === idx} asChild>
-                      <span>
-                        <Upload className="w-3 h-3" />
-                        {uploadingStemIdx === idx ? 'Uploading...' : draggingStemIdx === idx ? 'Drop file' : 'Upload or drop'}
-                      </span>
-                    </Button>
-                    <input type="file" accept="audio/*" className="hidden"
-                      onChange={(e) => handleStemUpload(e, idx)} />
-                  </label>
+                  {canEdit ? (
+                    <label className="cursor-pointer">
+                      <Button variant="ghost" size="sm" className="h-6 text-[10px] gap-1"
+                        disabled={uploadingStemIdx === idx} asChild>
+                        <span>
+                          <Upload className="w-3 h-3" />
+                          {uploadingStemIdx === idx ? 'Uploading...' : draggingStemIdx === idx ? 'Drop file' : 'Upload or drop'}
+                        </span>
+                      </Button>
+                      <input type="file" accept="audio/*" className="hidden"
+                        onChange={(e) => handleStemUpload(e, idx)} />
+                    </label>
+                  ) : (
+                    <span className="text-[10px] text-muted-foreground font-mono">No track uploaded</span>
+                  )}
                 </div>
               )}
               {stem.url && (
@@ -223,23 +229,27 @@ export default function AudioPlayer({ audioUrl, stems = [], onUploadAudio, onRem
                   <span className="text-[10px] font-mono w-8 text-right">
                     {Math.round((stemVolumes?.[idx] ?? 1) * 100)}%
                   </span>
-                  <label className="cursor-pointer shrink-0">
-                    <Button variant="ghost" size="icon" className="h-6 w-6"
-                      disabled={uploadingStemIdx === idx} asChild>
-                      <span title="Re-upload">
-                        {uploadingStemIdx === idx
-                          ? <span className="text-[9px]">...</span>
-                          : <Upload className="w-3 h-3" />}
-                      </span>
-                    </Button>
-                    <input type="file" accept="audio/*" className="hidden"
-                      onChange={(e) => handleStemUpload(e, idx)} />
-                  </label>
-                  <Button variant="ghost" size="icon"
-                    className="h-6 w-6 shrink-0 text-destructive hover:text-destructive"
-                    onClick={() => onRemoveStem?.(idx)} title="Remove">
-                    <Trash2 className="w-3 h-3" />
-                  </Button>
+                  {canEdit && (
+                    <>
+                      <label className="cursor-pointer shrink-0">
+                        <Button variant="ghost" size="icon" className="h-6 w-6"
+                          disabled={uploadingStemIdx === idx} asChild>
+                          <span title="Re-upload">
+                            {uploadingStemIdx === idx
+                              ? <span className="text-[9px]">...</span>
+                              : <Upload className="w-3 h-3" />}
+                          </span>
+                        </Button>
+                        <input type="file" accept="audio/*" className="hidden"
+                          onChange={(e) => handleStemUpload(e, idx)} />
+                      </label>
+                      <Button variant="ghost" size="icon"
+                        className="h-6 w-6 shrink-0 text-destructive hover:text-destructive"
+                        onClick={() => onRemoveStem?.(idx)} title="Remove">
+                        <Trash2 className="w-3 h-3" />
+                      </Button>
+                    </>
+                  )}
                 </>
               )}
             </div>

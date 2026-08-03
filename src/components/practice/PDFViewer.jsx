@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { FileText, Upload, Maximize2, X, Trash2, ExternalLink } from 'lucide-react';
+import { FileText, Upload, Maximize2, X, Trash2, ExternalLink, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/lib/supabaseClient';
 
-export default function PDFViewer({ scoreUrl, onUploadScore, onRemoveScore }) {
+export default function PDFViewer({ scoreUrl, onUploadScore, onRemoveScore, canEdit = true }) {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -50,6 +50,18 @@ export default function PDFViewer({ scoreUrl, onUploadScore, onRemoveScore }) {
   const handleDragLeave = () => setIsDragging(false);
 
   if (!scoreUrl) {
+    if (!canEdit) {
+      return (
+        <div className="flex flex-col items-center justify-center h-full min-h-[400px] rounded-xl border border-dashed border-border/50 bg-secondary/10 text-center p-6">
+          <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4 bg-secondary">
+            <FileText className="w-7 h-7 text-muted-foreground" />
+          </div>
+          <p className="text-sm font-medium text-foreground mb-1">No score uploaded</p>
+          <p className="text-xs text-muted-foreground">Ask the band creator to upload a sheet music PDF.</p>
+        </div>
+      );
+    }
+
     return (
       <div
         className={`flex flex-col items-center justify-center h-full min-h-[400px] rounded-xl border-2 border-dashed transition-colors ${
@@ -109,7 +121,7 @@ export default function PDFViewer({ scoreUrl, onUploadScore, onRemoveScore }) {
 
   return (
     <div
-      className={`flex flex-col h-full rounded-xl transition-colors ${isDragging ? 'ring-2 ring-primary/60' : ''}`}
+      className={`flex flex-col h-full rounded-xl transition-colors ${isDragging && canEdit ? 'ring-2 ring-primary/60' : ''}`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -118,11 +130,11 @@ export default function PDFViewer({ scoreUrl, onUploadScore, onRemoveScore }) {
         <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
           <FileText className="w-4 h-4 text-primary" />
           Score
-          {isDragging && <span className="text-[10px] text-primary font-normal">Drop to replace</span>}
+          {isDragging && canEdit && <span className="text-[10px] text-primary font-normal">Drop to replace</span>}
         </h3>
         <div className="flex items-center gap-1">
           {/* Remove PDF button */}
-          {onRemoveScore && (
+          {canEdit && onRemoveScore && (
             <Button
               variant="ghost"
               size="sm"
@@ -135,14 +147,21 @@ export default function PDFViewer({ scoreUrl, onUploadScore, onRemoveScore }) {
               Remove
             </Button>
           )}
-          <label className="cursor-pointer">
-            <Button variant="ghost" size="icon" className="h-7 w-7" disabled={isUploading} asChild>
-              <span title="Upload PDF">
-                {isUploading ? <span className="text-[9px]">...</span> : <Upload className="w-3.5 h-3.5" />}
-              </span>
+          {canEdit && (
+            <label className="cursor-pointer">
+              <Button variant="ghost" size="icon" className="h-7 w-7" disabled={isUploading} asChild>
+                <span title="Upload PDF">
+                  {isUploading ? <span className="text-[9px]">...</span> : <Upload className="w-3.5 h-3.5" />}
+                </span>
+              </Button>
+              <input type="file" accept=".pdf" className="hidden" onChange={handleFileUpload} />
+            </label>
+          )}
+          <a href={scoreUrl} download target="_blank" rel="noopener noreferrer">
+            <Button variant="ghost" size="icon" className="h-7 w-7" title="Download PDF">
+              <Download className="w-3.5 h-3.5" />
             </Button>
-            <input type="file" accept=".pdf" className="hidden" onChange={handleFileUpload} />
-          </label>
+          </a>
           <a href={scoreUrl} target="_blank" rel="noopener noreferrer">
             <Button variant="ghost" size="icon" className="h-7 w-7" title="Open PDF in new tab">
               <ExternalLink className="w-3.5 h-3.5" />

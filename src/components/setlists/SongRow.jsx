@@ -4,16 +4,18 @@ import { FileText, Headphones, Clock, Hash, GripVertical, Pencil, Trash2, Share2
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 
-export default function SongRow({ song, index, dragHandleProps, onEdit, onDelete, onShare }) {
+export default function SongRow({ song, index, dragHandleProps, onEdit, onDelete, onShare, canEdit = true }) {
   return (
     <div className="group flex items-center gap-3 p-3 rounded-xl border border-border/50 bg-card/50 hover:bg-secondary/30 hover:border-border transition-all duration-200">
       {/* Drag handle */}
-      <div
-        {...dragHandleProps}
-        className="shrink-0 cursor-grab active:cursor-grabbing text-muted-foreground/40 hover:text-muted-foreground transition-colors"
-      >
-        <GripVertical className="w-4 h-4" />
-      </div>
+      {canEdit && dragHandleProps && (
+        <div
+          {...dragHandleProps}
+          className="shrink-0 cursor-grab active:cursor-grabbing text-muted-foreground/40 hover:text-muted-foreground transition-colors"
+        >
+          <GripVertical className="w-4 h-4" />
+        </div>
+      )}
 
       {/* Track number */}
       <div className="w-7 h-7 rounded-lg bg-secondary flex items-center justify-center shrink-0">
@@ -75,22 +77,26 @@ export default function SongRow({ song, index, dragHandleProps, onEdit, onDelete
         >
           <Share2 className="w-3.5 h-3.5" />
         </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7"
-          onClick={(e) => { e.preventDefault(); onEdit(song); }}
-        >
-          <Pencil className="w-3.5 h-3.5" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7 text-destructive hover:text-destructive"
-          onClick={(e) => { e.preventDefault(); onDelete(song.id); }}
-        >
-          <Trash2 className="w-3.5 h-3.5" />
-        </Button>
+        {canEdit && (
+          <>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={(e) => { e.preventDefault(); onEdit(song); }}
+            >
+              <Pencil className="w-3.5 h-3.5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-destructive hover:text-destructive"
+              onClick={(e) => { e.preventDefault(); onDelete(song.id); }}
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </Button>
+          </>
+        )}
       </div>
     </div>
   );

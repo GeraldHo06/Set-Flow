@@ -89,6 +89,27 @@ export default function SetlistDetail() {
     enabled: !!setlistId,
   });
 
+  // 1b. Fetch User Role in Group (if setlist is associated with a group)
+  const { data: userRole } = useQuery({
+    queryKey: ['group-user-role', setlist?.group_id],
+    queryFn: async () => {
+      if (!setlist?.group_id) return 'owner';
+      const { data: { user } } = await supabase.auth.getUser();
+      const { data, error } = await supabase
+        .from('group_members')
+        .select('role')
+        .eq('group_id', setlist.group_id)
+        .eq('profile_id', user.id)
+        .maybeSingle();
+      
+      if (error) throw error;
+      return data?.role || 'member';
+    },
+    enabled: !!setlist?.group_id,
+  });
+
+  const canEdit = !setlist?.group_id || userRole === 'leader';
+
   // 2. Fetch Songs with fixed string column escaping syntax
   const { data: songs = [], isLoading } = useQuery({
     queryKey: ['songs', setlistId],
@@ -254,13 +275,13 @@ export default function SetlistDetail() {
               </div>
             ) : (
               <div
-                className="flex items-center gap-2 cursor-pointer group"
+                className={`flex items-center gap-2 ${canEdit ? 'cursor-pointer group' : ''}`}
                 onClick={handleTitleClick}
               >
                 <h1 className="text-2xl font-bold text-foreground tracking-tight">
                   {setlist?.name || 'Loading...'}
                 </h1>
-                <Pencil className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                {canEdit && <Pencil className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />}
               </div>
             )}
             {setlist?.description && (
@@ -275,30 +296,34 @@ export default function SetlistDetail() {
           <Button variant="outline" size="icon" onClick={() => setShowShareSetlist(true)} title="Share setlist">
             <Share2 className="w-4 h-4" />
           </Button>
-          <Button className="gap-2" onClick={() => setShowAddSong(true)}>
-            <Plus className="w-4 h-4" />
-            <span className="hidden sm:inline">Add Song</span>
-          </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon">
-                <MoreVertical className="w-4 h-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem
-                className="text-destructive"
-                onClick={() => {
-                  if (confirm('Delete this setlist and all its songs?')) {
-                    deleteSetlistMutation.mutate();
-                  }
-                }}
-              >
-                <Trash2 className="w-4 h-4 mr-2" />
-                Delete Setlist
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {canEdit && (
+            <Button className="gap-2" onClick={() => setShowAddSong(true)}>
+              <Plus className="w-4 h-4" />
+              <span className="hidden sm:inline">Add Song</span>
+            </Button>
+          )}
+          {canEdit && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon">
+                  <MoreVertical className="w-4 h-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  className="text-destructive"
+                  onClick={() => {
+                    if (confirm('Delete this setlist and all its songs?')) {
+                      deleteSetlistMutation.mutate();
+                    }
+                  }}
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Delete Setlist
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
       </div>
 
@@ -312,10 +337,12 @@ export default function SetlistDetail() {
       ) : songs.length === 0 ? (
         <div className="text-center py-20 border border-border/50 border-dashed rounded-xl">
           <p className="text-muted-foreground text-sm mb-3">No songs in this setlist yet.</p>
-          <Button size="sm" className="gap-2" onClick={() => setShowAddSong(true)}>
-            <Plus className="w-4 h-4" />
-            Add your first song
-          </Button>
+          {canEdit && (
+            <Button size="sm" className="gap-2" onClick={() => setShowAddSong(true)}>
+              <Plus className="w-4 h-4" />
+              Add your first song
+            </Button>
+          )}
         </div>
       ) : (
         <DragDropContext onDragEnd={handleDragEnd}>
@@ -327,7 +354,7 @@ export default function SetlistDetail() {
                 className="space-y-2"
               >
                 {songs.map((song, i) => (
-                  <Draggable key={song.id} draggableId={song.id} index={i}>
+                  <Draggable key={song.id} draggableId={song.id} index={i} isDragDisabled={!canEdit}>
                     {(provided, snapshot) => (
                       <div
                         ref={provided.innerRef}
@@ -337,12 +364,13 @@ export default function SetlistDetail() {
                         <SongRow
                           song={song}
                           index={i}
-                          dragHandleProps={provided.dragHandleProps}
+                          dragHandleProps={canEdit ? provided.dragHandleProps : null}
                           onEdit={setEditingSong}
                           onShare={setSharingSong}
                           onDelete={(id) => {
                             if (confirm('Remove this song?')) deleteSongMutation.mutate(id);
                           }}
+                          canEdit={canEdit}
                         />
                       </div>
                     )}

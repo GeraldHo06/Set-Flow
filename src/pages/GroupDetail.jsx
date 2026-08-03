@@ -296,20 +296,24 @@ export default function GroupDetail() {
           <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
             <Music className="w-4 h-4" /> Group Setlists
           </h2>
-          <Button size="sm" className="gap-2" onClick={() => setShowCreateSetlist(true)}>
-            <Plus className="w-4 h-4" />
-            New Setlist
-          </Button>
+          {isLeader && (
+            <Button size="sm" className="gap-2" onClick={() => setShowCreateSetlist(true)}>
+              <Plus className="w-4 h-4" />
+              New Setlist
+            </Button>
+          )}
         </div>
 
         {setlists.length === 0 ? (
           <div className="text-center py-16 border border-dashed border-border rounded-2xl">
             <Music className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
             <p className="text-muted-foreground text-sm mb-3">No group setlists yet.</p>
-            <Button size="sm" className="gap-2" onClick={() => setShowCreateSetlist(true)}>
-              <Plus className="w-4 h-4" />
-              Create first setlist
-            </Button>
+            {isLeader && (
+              <Button size="sm" className="gap-2" onClick={() => setShowCreateSetlist(true)}>
+                <Plus className="w-4 h-4" />
+                Create first setlist
+              </Button>
+            )}
           </div>
         ) : (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
