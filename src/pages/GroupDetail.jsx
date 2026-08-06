@@ -141,16 +141,19 @@ export default function GroupDetail() {
   // 8. Leave group
   const leaveGroupMutation = useMutation({
     mutationFn: async () => {
+      if (!myMembership) throw new Error('You are not a member of this group.');
       const { error } = await supabase
         .from('group_members')
         .delete()
-        .eq('group_id', groupId)
-        .eq('profile_id', currentUser.id);
+        .eq('id', myMembership.id);
       if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['my-groups'] });
       window.location.href = '/groups';
+    },
+    onError: (err) => {
+      toast({ variant: 'destructive', title: 'Error leaving group', description: err.message });
     }
   });
 
@@ -165,6 +168,9 @@ export default function GroupDetail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['my-groups'] });
       window.location.href = '/groups';
+    },
+    onError: (err) => {
+      toast({ variant: 'destructive', title: 'Error deleting group', description: err.message });
     }
   });
 

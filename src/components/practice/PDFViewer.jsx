@@ -97,7 +97,7 @@ export default function PDFViewer({ scoreUrl, onUploadScore, onRemoveScore, canE
 
   const viewerContent = (
     <iframe
-      src={`${scoreUrl}#toolbar=0&navpanes=0`}
+      src={`${scoreUrl}#toolbar=0&navpanes=0&view=FitH`}
       className="w-full h-full pdf-viewer-frame bg-white rounded-lg"
       title="Sheet Music"
     />
