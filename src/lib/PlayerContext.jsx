@@ -1,5 +1,4 @@
-import React, { createContext, useContext, useRef, useState, useCallback, useEffect } from 'react';
-import unmuteIosAudio from 'unmute-ios-audio';
+import React, { createContext, useContext, useRef, useState, useCallback } from 'react';
 
 const PlayerContext = createContext(null);
 
@@ -15,11 +14,6 @@ export function PlayerProvider({ children }) {
   const rafRef = useRef(null);
   const currentSongIdRef = useRef(null);
 
-  // Synchronous references to avoid React state batching lag in event loops
-  const currentSongRef = useRef(null);
-  const stemsRef = useRef([]);
-  const stemVolumesRef = useRef({});
-
   const [currentSong, setCurrentSong] = useState(null);
   const [stems, setStems] = useState([]);
   const [stemVolumes, setStemVolumes] = useState({});
@@ -30,43 +24,29 @@ export function PlayerProvider({ children }) {
   const [volume, setVolume] = useState(1);
   const [stemsLoaded, setStemsLoaded] = useState(false);
 
-  const getAudioCtx = useCallback(() => {
+  const ensureAudioCtx = useCallback(() => {
     if (!audioCtxRef.current) {
       audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (audioCtxRef.current.state === 'suspended') audioCtxRef.current.resume();
+    if (!masterGainRef.current) {
+      masterGainRef.current = audioCtxRef.current.createGain();
+      masterGainRef.current.gain.value = 1;
+      masterGainRef.current.connect(audioCtxRef.current.destination);
     }
     return audioCtxRef.current;
   }, []);
 
-  const resumeAudioCtx = useCallback(() => {
-    const ctx = getAudioCtx();
-    if (ctx && ctx.state === 'suspended') {
-      ctx.resume().catch(() => {});
-    }
-    if (!masterGainRef.current) {
-      masterGainRef.current = ctx.createGain();
-      masterGainRef.current.gain.value = stemMasterVolume;
-      masterGainRef.current.connect(ctx.destination);
-    }
-  }, [getAudioCtx, stemMasterVolume]);
-
-  // Safe wrapper for decodeAudioData supporting callbacks for older WebKit / iOS versions
-  const decodeAudioDataPromise = useCallback((ctx, buffer) => {
-    return new Promise((resolve, reject) => {
-      try {
-        const promise = ctx.decodeAudioData(buffer, resolve, reject);
-        if (promise && typeof promise.then === 'function') {
-          promise.then(resolve).catch(reject);
-        }
-      } catch (e) {
-        reject(e);
-      }
-    });
-  }, []);
-
-  // Initialize the unmute-ios-audio utility to bypass iOS silent switch
-  useEffect(() => {
-    unmuteIosAudio();
-  }, []);
+  // Fully kill an audio element
+  const killAudio = (audio) => {
+    if (!audio) return;
+    audio.onloadedmetadata = null;
+    audio.ontimeupdate = null;
+    audio.onended = null;
+    audio.pause();
+    audio.src = '';
+    audio.load(); // Forces browser to abort any pending network request
+  };
 
   const stopStems = useCallback(() => {
     stemSourcesRef.current.forEach(src => { try { src.stop(); } catch {} });
@@ -75,15 +55,22 @@ export function PlayerProvider({ children }) {
     cancelAnimationFrame(rafRef.current);
   }, []);
 
+  const stopAll = useCallback(() => {
+    killAudio(audioRef.current);
+    audioRef.current = null;
+    stopStems();
+    setIsPlaying(false);
+  }, [stopStems]);
+
   const loadStemBuffers = useCallback(async (stemList) => {
-    const ctx = getAudioCtx();
+    const ctx = ensureAudioCtx();
     let maxDur = 0;
     await Promise.all(stemList.filter(s => s.url).map(async (stem) => {
       if (!stemBuffersRef.current[stem.url]) {
         try {
           const resp = await fetch(stem.url);
           const buf = await resp.arrayBuffer();
-          const decoded = await decodeAudioDataPromise(ctx, buf);
+          const decoded = await ctx.decodeAudioData(buf);
           stemBuffersRef.current[stem.url] = decoded;
           if (decoded.duration > maxDur) maxDur = decoded.duration;
         } catch {}
@@ -94,7 +81,7 @@ export function PlayerProvider({ children }) {
       }
     }));
     return maxDur;
-  }, [getAudioCtx, decodeAudioDataPromise]);
+  }, [ensureAudioCtx]);
 
   const startStemSources = useCallback((offset, stemList, stemVols) => {
     stopStems();
@@ -129,13 +116,19 @@ export function PlayerProvider({ children }) {
     rafRef.current = requestAnimationFrame(tick);
   }, []);
 
-  const loadSong = useCallback((song, stemList = []) => {
+  const loadSong = useCallback(async (song, stemList = []) => {
+    // Kill old audio immediately and hard
+    const oldAudio = audioRef.current;
+    audioRef.current = null;
+    killAudio(oldAudio);
     stopStems();
     cancelAnimationFrame(rafRef.current);
 
+    // Small gap to let browser release audio resources
+    await new Promise(r => setTimeout(r, 80));
+
+    // Bail if a newer loadSong was called during the gap
     currentSongIdRef.current = song.id;
-    currentSongRef.current = song;
-    stemsRef.current = stemList;
 
     setCurrentSong(song);
     setStems(stemList);
@@ -147,35 +140,25 @@ export function PlayerProvider({ children }) {
 
     const initVols = {};
     stemList.forEach((_, i) => { initVols[i] = 1; });
-    stemVolumesRef.current = initVols;
     setStemVolumes(initVols);
 
-    // Setup source on the persistent audio ref synchronously
-    const audio = audioRef.current;
-    if (audio) {
-      audio.pause();
-      if (song.audio_url) {
-        audio.src = song.audio_url;
-        audio.volume = volume;
-        audio.onloadedmetadata = () => {
-          if (currentSongIdRef.current === song.id) setDuration(audio.duration || 0);
-        };
-        audio.ontimeupdate = () => {
-          if (currentSongIdRef.current === song.id) setCurrentTime(audio.currentTime);
-        };
-        audio.onended = () => {
-          if (currentSongIdRef.current === song.id) {
-            stopStems();
-            setIsPlaying(false);
-          }
-        };
-        audio.load();
-      } else {
-        audio.src = '';
-        audio.onloadedmetadata = null;
-        audio.ontimeupdate = null;
-        audio.onended = null;
-      }
+    // Set up main audio
+    if (song.audio_url) {
+      const audio = new Audio(song.audio_url);
+      audio.volume = volume;
+      audio.onloadedmetadata = () => {
+        if (currentSongIdRef.current === song.id) setDuration(audio.duration || 0);
+      };
+      audio.ontimeupdate = () => {
+        if (currentSongIdRef.current === song.id) setCurrentTime(audio.currentTime);
+      };
+      audio.onended = () => {
+        if (currentSongIdRef.current === song.id) {
+          stopStems();
+          setIsPlaying(false);
+        }
+      };
+      audioRef.current = audio;
     }
 
     // Load stems in background
@@ -192,36 +175,29 @@ export function PlayerProvider({ children }) {
   }, [stopStems, volume, loadStemBuffers]);
 
   const updateStems = useCallback(async (stemList) => {
-    stemsRef.current = stemList;
     setStems(stemList);
     if (stemList.some(s => s.url)) {
       const maxDur = await loadStemBuffers(stemList);
-      if (!audioRef.current?.src && maxDur > 0) setDuration(maxDur);
+      if (!audioRef.current && maxDur > 0) setDuration(maxDur);
       setStemsLoaded(true);
     }
   }, [loadStemBuffers]);
 
   const play = useCallback(() => {
-    resumeAudioCtx();
-    const song = currentSongRef.current;
-    const currentStems = stemsRef.current;
-    const hasMainAudio = !!song?.audio_url;
-
-    if (hasMainAudio && audioRef.current) {
+    ensureAudioCtx();
+    if (audioRef.current) {
       audioRef.current.play().catch(() => {});
     }
-    if (currentStems.some(s => s.url)) {
-      const offset = hasMainAudio ? (audioRef.current?.currentTime ?? 0) : stemOffsetRef.current;
-      startStemSources(offset, currentStems, stemVolumesRef.current);
-      if (!hasMainAudio) startStemTick();
+    if (stems.some(s => s.url)) {
+      const offset = audioRef.current?.currentTime ?? stemOffsetRef.current;
+      startStemSources(offset, stems, stemVolumes);
+      if (!audioRef.current) startStemTick();
     }
     setIsPlaying(true);
-  }, [resumeAudioCtx, startStemSources, startStemTick]);
+  }, [stems, stemVolumes, ensureAudioCtx, startStemSources, startStemTick]);
 
   const pause = useCallback(() => {
-    const song = currentSongRef.current;
-    const hasMainAudio = !!song?.audio_url;
-    if (hasMainAudio && audioRef.current) audioRef.current.pause();
+    if (audioRef.current) audioRef.current.pause();
     if (audioCtxRef.current && stemSourcesRef.current.length > 0) {
       const elapsed = audioCtxRef.current.currentTime - stemStartCtxTimeRef.current;
       stemOffsetRef.current = stemOffsetRef.current + elapsed;
@@ -237,23 +213,17 @@ export function PlayerProvider({ children }) {
 
   const seek = useCallback((time) => {
     const t = Math.max(0, time);
-    const song = currentSongRef.current;
-    const currentStems = stemsRef.current;
-    const hasMainAudio = !!song?.audio_url;
-
-    if (hasMainAudio && audioRef.current) {
-      audioRef.current.currentTime = t;
-    }
+    if (audioRef.current) audioRef.current.currentTime = t;
     setCurrentTime(t);
     stemOffsetRef.current = t;
-    if (isPlaying && currentStems.some(s => s.url)) {
-      startStemSources(t, currentStems, stemVolumesRef.current);
-      if (!hasMainAudio && audioCtxRef.current) {
+    if (isPlaying && stems.some(s => s.url)) {
+      startStemSources(t, stems, stemVolumes);
+      if (!audioRef.current && audioCtxRef.current) {
         stemStartCtxTimeRef.current = audioCtxRef.current.currentTime;
         startStemTick();
       }
     }
-  }, [isPlaying, startStemSources, startStemTick]);
+  }, [isPlaying, stems, stemVolumes, startStemSources, startStemTick]);
 
   const changeVolume = useCallback((vol) => {
     setVolume(vol);
@@ -261,7 +231,6 @@ export function PlayerProvider({ children }) {
   }, []);
 
   const changeStemVolume = useCallback((idx, vol) => {
-    stemVolumesRef.current = { ...stemVolumesRef.current, [idx]: vol };
     setStemVolumes(prev => ({ ...prev, [idx]: vol }));
     if (stemGainsRef.current[idx]) stemGainsRef.current[idx].gain.value = vol;
   }, []);
@@ -271,24 +240,15 @@ export function PlayerProvider({ children }) {
     if (masterGainRef.current) masterGainRef.current.gain.value = vol;
   }, []);
 
+  // X button — stop and dismiss mini player
   const stop = useCallback(() => {
     currentSongIdRef.current = null;
-    currentSongRef.current = null;
-    stemsRef.current = [];
-    stemVolumesRef.current = {};
-
-    const audio = audioRef.current;
-    if (audio) {
-      audio.pause();
-      audio.src = '';
-      audio.onloadedmetadata = null;
-      audio.ontimeupdate = null;
-      audio.onended = null;
-    }
+    killAudio(audioRef.current);
+    audioRef.current = null;
     stopStems();
     setIsPlaying(false);
     setCurrentTime(0);
-    setCurrentSong(null);
+    setCurrentSong(null); // This hides the mini player
     setStems([]);
     setDuration(0);
   }, [stopStems]);
@@ -305,11 +265,6 @@ export function PlayerProvider({ children }) {
       stop,
     }}>
       {children}
-      <audio
-        ref={audioRef}
-        style={{ display: 'none' }}
-        preload="auto"
-      />
     </PlayerContext.Provider>
   );
 }
