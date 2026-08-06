@@ -2,6 +2,9 @@ import React, { createContext, useContext, useRef, useState, useCallback, useEff
 
 const PlayerContext = createContext(null);
 
+// Minimal 1-second silent MP4 loop to force iOS to override physical silent switch
+const SILENT_VIDEO_SRC = 'data:video/mp4;base64,AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAAIZnJlZQAAAsxtZGF0AAACrQYF//+//vXb8yyubp//AAAC7W1vb3YAAABsbXZoZAAAAAAAAAAAAAAAAAAAA+//wAAADBhdmNDAfQACv/hABdn9AAKkZsr02QAAAMABAAAAwDIPEiWWAEABmjr48RIRAAAABhzdHRzAAAAAAAAAAEAAAABAAACAAAAABxzdHNjAAAAAAAAAAEAAAABAAAAAQAAAAEAAAAUc3RzegAAAAAAAALEAAAAAQAAABRzdGNvAAAAAAAAAAEAAAAwAAAAYnVkdGEAAABabWV0YQAAAAAAAAAhaGRscgAAAAAAAAAAbWRpcmFwcGwAAAAAAAAAAAAAAAAtaWxzdAAAACWpdG9vAAAAHWRhdGEAAAABAAAAAExhdmY1Ny41Ni4xMDE=';
+
 export function PlayerProvider({ children }) {
   const audioRef = useRef(null);
   const audioCtxRef = useRef(null);
@@ -68,10 +71,10 @@ export function PlayerProvider({ children }) {
       // 1. Resume context under user gesture
       resumeAudioCtx();
 
-      // 2. Play silent WAV sequence only if the audio element src is empty, to prevent bubbling pause
+      // 2. Play silent MP4 sequence only if the video element src is empty, to prevent bubbling pause
       const audio = audioRef.current;
       if (audio && !audio.src) {
-        audio.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
+        audio.src = SILENT_VIDEO_SRC;
         const playPromise = audio.play();
         if (playPromise !== undefined) {
           playPromise.then(() => {
@@ -176,28 +179,40 @@ export function PlayerProvider({ children }) {
     stemVolumesRef.current = initVols;
     setStemVolumes(initVols);
 
-    // Setup source on the persistent audio ref synchronously
+    // Setup source on the persistent video ref synchronously
     const audio = audioRef.current;
     if (audio) {
       audio.pause();
-      if (song.audio_url) {
-        audio.src = song.audio_url;
+      const hasStems = stemList.some(s => s.url);
+      const actualAudioUrl = song.audio_url || (hasStems ? SILENT_VIDEO_SRC : '');
+
+      if (actualAudioUrl) {
+        audio.src = actualAudioUrl;
         audio.volume = volume;
+        // Loop the silent placeholder video to maintain the iOS audio session category
+        audio.loop = actualAudioUrl === SILENT_VIDEO_SRC;
         audio.onloadedmetadata = () => {
-          if (currentSongIdRef.current === song.id) setDuration(audio.duration || 0);
+          if (currentSongIdRef.current === song.id && song.audio_url) {
+            setDuration(audio.duration || 0);
+          }
         };
         audio.ontimeupdate = () => {
-          if (currentSongIdRef.current === song.id) setCurrentTime(audio.currentTime);
+          if (currentSongIdRef.current === song.id && song.audio_url) {
+            setCurrentTime(audio.currentTime);
+          }
         };
         audio.onended = () => {
           if (currentSongIdRef.current === song.id) {
-            stopStems();
-            setIsPlaying(false);
+            if (song.audio_url) {
+              stopStems();
+              setIsPlaying(false);
+            }
           }
         };
         audio.load();
       } else {
         audio.src = '';
+        audio.loop = false;
         audio.onloadedmetadata = null;
         audio.ontimeupdate = null;
         audio.onended = null;
@@ -232,11 +247,12 @@ export function PlayerProvider({ children }) {
     const song = currentSongRef.current;
     const currentStems = stemsRef.current;
     const hasMainAudio = !!song?.audio_url;
+    const hasStems = currentStems.some(s => s.url);
 
-    if (hasMainAudio && audioRef.current) {
+    if ((hasMainAudio || hasStems) && audioRef.current) {
       audioRef.current.play().catch(() => {});
     }
-    if (currentStems.some(s => s.url)) {
+    if (hasStems) {
       const offset = hasMainAudio ? (audioRef.current?.currentTime ?? 0) : stemOffsetRef.current;
       startStemSources(offset, currentStems, stemVolumesRef.current);
       if (!hasMainAudio) startStemTick();
@@ -246,8 +262,13 @@ export function PlayerProvider({ children }) {
 
   const pause = useCallback(() => {
     const song = currentSongRef.current;
+    const currentStems = stemsRef.current;
     const hasMainAudio = !!song?.audio_url;
-    if (hasMainAudio && audioRef.current) audioRef.current.pause();
+    const hasStems = currentStems.some(s => s.url);
+
+    if ((hasMainAudio || hasStems) && audioRef.current) {
+      audioRef.current.pause();
+    }
     if (audioCtxRef.current && stemSourcesRef.current.length > 0) {
       const elapsed = audioCtxRef.current.currentTime - stemStartCtxTimeRef.current;
       stemOffsetRef.current = stemOffsetRef.current + elapsed;
@@ -267,7 +288,9 @@ export function PlayerProvider({ children }) {
     const currentStems = stemsRef.current;
     const hasMainAudio = !!song?.audio_url;
 
-    if (hasMainAudio && audioRef.current) audioRef.current.currentTime = t;
+    if (hasMainAudio && audioRef.current) {
+      audioRef.current.currentTime = t;
+    }
     setCurrentTime(t);
     stemOffsetRef.current = t;
     if (isPlaying && currentStems.some(s => s.url)) {
@@ -305,6 +328,7 @@ export function PlayerProvider({ children }) {
     if (audio) {
       audio.pause();
       audio.src = '';
+      audio.loop = false;
       audio.onloadedmetadata = null;
       audio.ontimeupdate = null;
       audio.onended = null;
@@ -329,11 +353,19 @@ export function PlayerProvider({ children }) {
       stop,
     }}>
       {children}
-      <audio
+      <video
         ref={audioRef}
-        style={{ display: 'none' }}
+        style={{
+          position: 'absolute',
+          width: '1px',
+          height: '1px',
+          opacity: 0,
+          pointerEvents: 'none',
+          visibility: 'visible',
+        }}
         preload="auto"
         playsInline
+        webkitPlaysInline
       />
     </PlayerContext.Provider>
   );
