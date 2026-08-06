@@ -126,26 +126,22 @@ export default function GroupDetail() {
   // 7. Remove member (leader only)
   const removeMemberMutation = useMutation({
     mutationFn: async (memberId) => {
-      const { error } = await supabase
-        .from('group_members')
-        .delete()
-        .eq('id', memberId);
+      const { error } = await supabase.rpc('remove_member', { member_row_id: memberId });
       if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['group-members', groupId] });
       toast({ title: 'Member removed.' });
+    },
+    onError: (err) => {
+      toast({ variant: 'destructive', title: 'Error removing member', description: err.message });
     }
   });
 
   // 8. Leave group
   const leaveGroupMutation = useMutation({
     mutationFn: async () => {
-      if (!myMembership) throw new Error('You are not a member of this group.');
-      const { error } = await supabase
-        .from('group_members')
-        .delete()
-        .eq('id', myMembership.id);
+      const { error } = await supabase.rpc('leave_group', { target_group_id: groupId });
       if (error) throw error;
     },
     onSuccess: () => {
