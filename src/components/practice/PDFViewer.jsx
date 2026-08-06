@@ -95,9 +95,15 @@ export default function PDFViewer({ scoreUrl, onUploadScore, onRemoveScore, canE
     );
   }
 
+  const isMobile = typeof navigator !== 'undefined' && /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+  const iframeSrc = isMobile
+    ? `https://docs.google.com/viewer?url=${encodeURIComponent(scoreUrl)}&embedded=true`
+    : `${scoreUrl}#toolbar=0&navpanes=0&view=FitH`;
+
   const viewerContent = (
     <iframe
-      src={`${scoreUrl}#toolbar=0&navpanes=0&view=FitH`}
+      src={iframeSrc}
       className="w-full h-full pdf-viewer-frame bg-white rounded-lg"
       title="Sheet Music"
     />
