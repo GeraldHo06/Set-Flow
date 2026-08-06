@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useRef, useState, useCallback } from 'react';
+import React, { createContext, useContext, useRef, useState, useCallback, useEffect } from 'react';
 
 const PlayerContext = createContext(null);
 
@@ -28,7 +28,9 @@ export function PlayerProvider({ children }) {
     if (!audioCtxRef.current) {
       audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
     }
-    if (audioCtxRef.current.state === 'suspended') audioCtxRef.current.resume();
+    if (audioCtxRef.current.state === 'suspended') {
+      audioCtxRef.current.resume().catch(() => {});
+    }
     if (!masterGainRef.current) {
       masterGainRef.current = audioCtxRef.current.createGain();
       masterGainRef.current.gain.value = 1;
@@ -37,16 +39,53 @@ export function PlayerProvider({ children }) {
     return audioCtxRef.current;
   }, []);
 
-  // Fully kill an audio element
-  const killAudio = (audio) => {
-    if (!audio) return;
-    audio.onloadedmetadata = null;
-    audio.ontimeupdate = null;
-    audio.onended = null;
-    audio.pause();
-    audio.src = '';
-    audio.load(); // Forces browser to abort any pending network request
-  };
+  // Safe wrapper for decodeAudioData supporting callbacks for older WebKit / iOS versions
+  const decodeAudioDataPromise = useCallback((ctx, buffer) => {
+    return new Promise((resolve, reject) => {
+      try {
+        const promise = ctx.decodeAudioData(buffer, resolve, reject);
+        if (promise && typeof promise.then === 'function') {
+          promise.then(resolve).catch(reject);
+        }
+      } catch (e) {
+        reject(e);
+      }
+    });
+  }, []);
+
+  // Mobile Safari/Chrome interaction unlocker
+  useEffect(() => {
+    const unlock = () => {
+      if (!audioCtxRef.current) {
+        audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
+        audioCtxRef.current.resume().catch(() => {});
+      }
+
+      // Blessing the persistent audio element
+      const audio = audioRef.current;
+      if (audio) {
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+          playPromise.then(() => {
+            audio.pause();
+          }).catch(() => {});
+        }
+      }
+
+      window.removeEventListener('click', unlock);
+      window.removeEventListener('touchstart', unlock);
+    };
+
+    window.addEventListener('click', unlock);
+    window.addEventListener('touchstart', unlock);
+
+    return () => {
+      window.removeEventListener('click', unlock);
+      window.removeEventListener('touchstart', unlock);
+    };
+  }, []);
 
   const stopStems = useCallback(() => {
     stemSourcesRef.current.forEach(src => { try { src.stop(); } catch {} });
@@ -54,13 +93,6 @@ export function PlayerProvider({ children }) {
     stemGainsRef.current = [];
     cancelAnimationFrame(rafRef.current);
   }, []);
-
-  const stopAll = useCallback(() => {
-    killAudio(audioRef.current);
-    audioRef.current = null;
-    stopStems();
-    setIsPlaying(false);
-  }, [stopStems]);
 
   const loadStemBuffers = useCallback(async (stemList) => {
     const ctx = ensureAudioCtx();
@@ -70,7 +102,7 @@ export function PlayerProvider({ children }) {
         try {
           const resp = await fetch(stem.url);
           const buf = await resp.arrayBuffer();
-          const decoded = await ctx.decodeAudioData(buf);
+          const decoded = await decodeAudioDataPromise(ctx, buf);
           stemBuffersRef.current[stem.url] = decoded;
           if (decoded.duration > maxDur) maxDur = decoded.duration;
         } catch {}
@@ -81,7 +113,7 @@ export function PlayerProvider({ children }) {
       }
     }));
     return maxDur;
-  }, [ensureAudioCtx]);
+  }, [ensureAudioCtx, decodeAudioDataPromise]);
 
   const startStemSources = useCallback((offset, stemList, stemVols) => {
     stopStems();
@@ -116,18 +148,10 @@ export function PlayerProvider({ children }) {
     rafRef.current = requestAnimationFrame(tick);
   }, []);
 
-  const loadSong = useCallback(async (song, stemList = []) => {
-    // Kill old audio immediately and hard
-    const oldAudio = audioRef.current;
-    audioRef.current = null;
-    killAudio(oldAudio);
+  const loadSong = useCallback((song, stemList = []) => {
     stopStems();
     cancelAnimationFrame(rafRef.current);
 
-    // Small gap to let browser release audio resources
-    await new Promise(r => setTimeout(r, 80));
-
-    // Bail if a newer loadSong was called during the gap
     currentSongIdRef.current = song.id;
 
     setCurrentSong(song);
@@ -142,23 +166,32 @@ export function PlayerProvider({ children }) {
     stemList.forEach((_, i) => { initVols[i] = 1; });
     setStemVolumes(initVols);
 
-    // Set up main audio
-    if (song.audio_url) {
-      const audio = new Audio(song.audio_url);
-      audio.volume = volume;
-      audio.onloadedmetadata = () => {
-        if (currentSongIdRef.current === song.id) setDuration(audio.duration || 0);
-      };
-      audio.ontimeupdate = () => {
-        if (currentSongIdRef.current === song.id) setCurrentTime(audio.currentTime);
-      };
-      audio.onended = () => {
-        if (currentSongIdRef.current === song.id) {
-          stopStems();
-          setIsPlaying(false);
-        }
-      };
-      audioRef.current = audio;
+    // Setup source on the persistent audio ref synchronously
+    const audio = audioRef.current;
+    if (audio) {
+      audio.pause();
+      if (song.audio_url) {
+        audio.src = song.audio_url;
+        audio.volume = volume;
+        audio.onloadedmetadata = () => {
+          if (currentSongIdRef.current === song.id) setDuration(audio.duration || 0);
+        };
+        audio.ontimeupdate = () => {
+          if (currentSongIdRef.current === song.id) setCurrentTime(audio.currentTime);
+        };
+        audio.onended = () => {
+          if (currentSongIdRef.current === song.id) {
+            stopStems();
+            setIsPlaying(false);
+          }
+        };
+        audio.load();
+      } else {
+        audio.src = '';
+        audio.onloadedmetadata = null;
+        audio.ontimeupdate = null;
+        audio.onended = null;
+      }
     }
 
     // Load stems in background
@@ -178,33 +211,35 @@ export function PlayerProvider({ children }) {
     setStems(stemList);
     if (stemList.some(s => s.url)) {
       const maxDur = await loadStemBuffers(stemList);
-      if (!audioRef.current && maxDur > 0) setDuration(maxDur);
+      if (!audioRef.current?.src && maxDur > 0) setDuration(maxDur);
       setStemsLoaded(true);
     }
   }, [loadStemBuffers]);
 
   const play = useCallback(() => {
     ensureAudioCtx();
-    if (audioRef.current) {
+    const hasMainAudio = !!currentSong?.audio_url;
+    if (hasMainAudio && audioRef.current) {
       audioRef.current.play().catch(() => {});
     }
     if (stems.some(s => s.url)) {
-      const offset = audioRef.current?.currentTime ?? stemOffsetRef.current;
+      const offset = hasMainAudio ? (audioRef.current?.currentTime ?? 0) : stemOffsetRef.current;
       startStemSources(offset, stems, stemVolumes);
-      if (!audioRef.current) startStemTick();
+      if (!hasMainAudio) startStemTick();
     }
     setIsPlaying(true);
-  }, [stems, stemVolumes, ensureAudioCtx, startStemSources, startStemTick]);
+  }, [stems, stemVolumes, ensureAudioCtx, startStemSources, startStemTick, currentSong]);
 
   const pause = useCallback(() => {
-    if (audioRef.current) audioRef.current.pause();
+    const hasMainAudio = !!currentSong?.audio_url;
+    if (hasMainAudio && audioRef.current) audioRef.current.pause();
     if (audioCtxRef.current && stemSourcesRef.current.length > 0) {
       const elapsed = audioCtxRef.current.currentTime - stemStartCtxTimeRef.current;
       stemOffsetRef.current = stemOffsetRef.current + elapsed;
     }
     stopStems();
     setIsPlaying(false);
-  }, [stopStems]);
+  }, [stopStems, currentSong]);
 
   const togglePlay = useCallback(() => {
     if (isPlaying) pause();
@@ -213,17 +248,18 @@ export function PlayerProvider({ children }) {
 
   const seek = useCallback((time) => {
     const t = Math.max(0, time);
-    if (audioRef.current) audioRef.current.currentTime = t;
+    const hasMainAudio = !!currentSong?.audio_url;
+    if (hasMainAudio && audioRef.current) audioRef.current.currentTime = t;
     setCurrentTime(t);
     stemOffsetRef.current = t;
     if (isPlaying && stems.some(s => s.url)) {
       startStemSources(t, stems, stemVolumes);
-      if (!audioRef.current && audioCtxRef.current) {
+      if (!hasMainAudio && audioCtxRef.current) {
         stemStartCtxTimeRef.current = audioCtxRef.current.currentTime;
         startStemTick();
       }
     }
-  }, [isPlaying, stems, stemVolumes, startStemSources, startStemTick]);
+  }, [isPlaying, stems, stemVolumes, startStemSources, startStemTick, currentSong]);
 
   const changeVolume = useCallback((vol) => {
     setVolume(vol);
@@ -240,15 +276,20 @@ export function PlayerProvider({ children }) {
     if (masterGainRef.current) masterGainRef.current.gain.value = vol;
   }, []);
 
-  // X button — stop and dismiss mini player
   const stop = useCallback(() => {
     currentSongIdRef.current = null;
-    killAudio(audioRef.current);
-    audioRef.current = null;
+    const audio = audioRef.current;
+    if (audio) {
+      audio.pause();
+      audio.src = '';
+      audio.onloadedmetadata = null;
+      audio.ontimeupdate = null;
+      audio.onended = null;
+    }
     stopStems();
     setIsPlaying(false);
     setCurrentTime(0);
-    setCurrentSong(null); // This hides the mini player
+    setCurrentSong(null);
     setStems([]);
     setDuration(0);
   }, [stopStems]);
@@ -265,6 +306,12 @@ export function PlayerProvider({ children }) {
       stop,
     }}>
       {children}
+      <audio
+        ref={audioRef}
+        style={{ display: 'none' }}
+        preload="auto"
+        playsInline
+      />
     </PlayerContext.Provider>
   );
 }

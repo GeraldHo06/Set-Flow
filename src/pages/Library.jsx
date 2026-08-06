@@ -38,11 +38,11 @@ export default function Library() {
   });
 
   // 2. Simple audio playback toggle mechanics
-  const handlePlayToggle = async (track) => {
+  const handlePlayToggle = (track) => {
     if (currentSong?.id === track.id) {
       togglePlay();
     } else {
-      await loadSong({
+      loadSong({
         id: track.id,
         title: track.title,
         artist: track.artist,
