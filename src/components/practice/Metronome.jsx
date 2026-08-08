@@ -5,8 +5,11 @@ import { Slider } from '@/components/ui/slider';
 
 const TIME_SIGNATURES = ['2/4', '3/4', '4/4', '5/4', '6/8', '7/8'];
 
+const MAX_BPM = 500;
+const MIN_BPM = 20;
+
 export default function Metronome({ initialBpm = 120 }) {
-  const [bpm, setBpm] = useState(initialBpm);
+  const [bpm, setBpm] = useState(() => Math.min(MAX_BPM, Math.max(MIN_BPM, initialBpm)));
   const [timeSig, setTimeSig] = useState('4/4');
   const [isRunning, setIsRunning] = useState(false);
   const [currentBeat, setCurrentBeat] = useState(0);
@@ -101,7 +104,7 @@ export default function Metronome({ initialBpm = 120 }) {
       if (taps.length >= 2) {
         const gaps = taps.slice(1).map((t, i) => t - taps[i]);
         const avg = gaps.reduce((a, b) => a + b, 0) / gaps.length;
-        setBpm(Math.round(Math.min(300, Math.max(20, 60000 / avg))));
+        setBpm(Math.round(Math.min(MAX_BPM, Math.max(MIN_BPM, 60000 / avg))));
       }
     };
   })();
@@ -156,28 +159,28 @@ export default function Metronome({ initialBpm = 120 }) {
               variant="ghost"
               size="icon"
               className="h-6 w-6 text-xs"
-              onClick={() => setBpm(b => Math.max(20, b - 1))}
+              onClick={() => setBpm(b => Math.max(MIN_BPM, b - 1))}
             >−</Button>
             <span className="text-lg font-bold font-mono text-primary w-12 text-center">{bpm}</span>
             <Button
               variant="ghost"
               size="icon"
               className="h-6 w-6 text-xs"
-              onClick={() => setBpm(b => Math.min(300, b + 1))}
+              onClick={() => setBpm(b => Math.min(MAX_BPM, b + 1))}
             >+</Button>
           </div>
         </div>
         <Slider
           value={[bpm]}
-          min={20}
-          max={300}
+          min={MIN_BPM}
+          max={MAX_BPM}
           step={1}
           onValueChange={handleBpmChange}
           className="w-full"
         />
         <div className="flex justify-between mt-1">
-          <span className="text-[10px] text-muted-foreground">20</span>
-          <span className="text-[10px] text-muted-foreground">300</span>
+          <span className="text-[10px] text-muted-foreground">{MIN_BPM}</span>
+          <span className="text-[10px] text-muted-foreground">{MAX_BPM}</span>
         </div>
       </div>
 
