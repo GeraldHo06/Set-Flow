@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Upload, Music2, Trash2 } from 'lucide-react';
+import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Upload, Music2, Trash2, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { supabase } from '@/lib/supabaseClient';
@@ -26,9 +26,10 @@ export default function AudioPlayer({ audioUrl, stems = [], onUploadAudio, onRem
   const {
     isPlaying, currentTime, duration, volume,
     stemVolumes, stemMasterVolume, stemsLoaded,
+    speed, pitch,
     togglePlay, seek, changeVolume,
     changeStemVolume, changeStemMasterVolume,
-    updateStems,
+    updateStems, changeSpeed, changePitch,
   } = usePlayer();
 
   const [isMuted, setIsMuted] = useState(false);
@@ -171,6 +172,41 @@ export default function AudioPlayer({ audioUrl, stems = [], onUploadAudio, onRem
         <span className="text-[10px] font-mono text-muted-foreground w-8 text-right">
           {Math.round((isMuted ? 0 : volume) * 100)}%
         </span>
+      </div>
+
+      {/* Speed & Pitch Controls */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5 px-1">
+        {/* Speed Slider */}
+        <div className="flex flex-col gap-1.5">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Playback Speed</span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] font-mono font-medium text-foreground">{speed.toFixed(2)}x</span>
+              {speed !== 1 && (
+                <Button variant="ghost" size="icon" className="h-4 w-4 text-muted-foreground hover:text-foreground" onClick={() => changeSpeed(1.0)} title="Reset speed">
+                  <RotateCcw className="w-2.5 h-2.5" />
+                </Button>
+              )}
+            </div>
+          </div>
+          <Slider value={[speed]} min={0.5} max={1.5} step={0.05} onValueChange={(v) => changeSpeed(v[0])} disabled={!hasAudio} />
+        </div>
+
+        {/* Pitch Slider */}
+        <div className="flex flex-col gap-1.5">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Pitch Shift</span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] font-mono font-medium text-foreground">{pitch > 0 ? `+${pitch}` : pitch} semitones</span>
+              {pitch !== 0 && (
+                <Button variant="ghost" size="icon" className="h-4 w-4 text-muted-foreground hover:text-foreground" onClick={() => changePitch(0)} title="Reset pitch">
+                  <RotateCcw className="w-2.5 h-2.5" />
+                </Button>
+              )}
+            </div>
+          </div>
+          <Slider value={[pitch]} min={-6} max={6} step={1} onValueChange={(v) => changePitch(v[0])} disabled={!hasAudio} />
+        </div>
       </div>
 
       {/* Stem Mixer */}

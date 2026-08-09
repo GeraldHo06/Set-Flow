@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useRef, useState, useCallback } from 'react';
+import { Jungle, getMultiplier } from '../utils/jungle';
 
 const PlayerContext = createContext(null);
 
@@ -13,6 +14,8 @@ export function PlayerProvider({ children }) {
   const stemOffsetRef = useRef(0);
   const rafRef = useRef(null);
   const currentSongIdRef = useRef(null);
+  const pitchShifterRef = useRef(null);
+  const audioSourceRef = useRef(null);
 
   const [currentSong, setCurrentSong] = useState(null);
   const [stems, setStems] = useState([]);
@@ -23,6 +26,8 @@ export function PlayerProvider({ children }) {
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(1);
   const [stemsLoaded, setStemsLoaded] = useState(false);
+  const [speed, setSpeed] = useState(1);
+  const [pitch, setPitch] = useState(0);
 
   const ensureAudioCtx = useCallback(() => {
     if (!audioCtxRef.current) {
@@ -32,6 +37,11 @@ export function PlayerProvider({ children }) {
     if (!masterGainRef.current) {
       masterGainRef.current = audioCtxRef.current.createGain();
       masterGainRef.current.gain.value = 1;
+      
+      // Initialize pitch shifter
+      pitchShifterRef.current = new Jungle(audioCtxRef.current);
+      
+      // Initially bypassed (since speed=1, pitch=0)
       masterGainRef.current.connect(audioCtxRef.current.destination);
     }
     return audioCtxRef.current;
@@ -46,6 +56,7 @@ export function PlayerProvider({ children }) {
     audio.pause();
     audio.src = '';
     audio.load(); // Forces browser to abort any pending network request
+    audioSourceRef.current = null; // Clear connected source
   };
 
   const stopStems = useCallback(() => {
@@ -100,10 +111,11 @@ export function PlayerProvider({ children }) {
       const src = ctx.createBufferSource();
       src.buffer = buf;
       src.connect(gain);
+      src.playbackRate.value = speed; // Set current speed
       src.start(ctx.currentTime + 0.01, Math.min(offset, buf.duration - 0.01));
       stemSourcesRef.current.push(src);
     });
-  }, [stopStems]);
+  }, [stopStems, speed]);
 
   const startStemTick = useCallback(() => {
     cancelAnimationFrame(rafRef.current);
@@ -114,6 +126,27 @@ export function PlayerProvider({ children }) {
       rafRef.current = requestAnimationFrame(tick);
     };
     rafRef.current = requestAnimationFrame(tick);
+  }, []);
+
+  const updatePitchOffset = useCallback((pitchVal, speedVal) => {
+    const ctx = audioCtxRef.current;
+    if (!ctx || !pitchShifterRef.current || !masterGainRef.current) return;
+
+    // Calculate speed-induced pitch shift on stem buffers (semitones)
+    const speedShift = Math.log2(speedVal) * 12;
+    const netShift = pitchVal - speedShift;
+
+    // Bypass pitch shifter if net shift is very close to 0 to preserve original quality
+    if (Math.abs(netShift) < 0.01) {
+      masterGainRef.current.disconnect();
+      masterGainRef.current.connect(ctx.destination);
+    } else {
+      masterGainRef.current.disconnect();
+      masterGainRef.current.connect(pitchShifterRef.current.input);
+      pitchShifterRef.current.output.disconnect();
+      pitchShifterRef.current.output.connect(ctx.destination);
+      pitchShifterRef.current.setPitchOffset(getMultiplier(netShift));
+    }
   }, []);
 
   const loadSong = useCallback(async (song, stemList = []) => {
@@ -145,7 +178,12 @@ export function PlayerProvider({ children }) {
     // Set up main audio
     if (song.audio_url) {
       const audio = new Audio(song.audio_url);
+      audio.crossOrigin = "anonymous";
+      audio.preservesPitch = false;
+      audio.mozPreservesPitch = false;
+      audio.webkitPreservesPitch = false;
       audio.volume = volume;
+      audio.playbackRate = speed; // Apply active speed
       audio.onloadedmetadata = () => {
         if (currentSongIdRef.current === song.id) setDuration(audio.duration || 0);
       };
@@ -172,7 +210,7 @@ export function PlayerProvider({ children }) {
     } else {
       setStemsLoaded(true);
     }
-  }, [stopStems, volume, loadStemBuffers]);
+  }, [stopStems, volume, loadStemBuffers, speed]);
 
   const updateStems = useCallback(async (stemList) => {
     setStems(stemList);
@@ -184,8 +222,13 @@ export function PlayerProvider({ children }) {
   }, [loadStemBuffers]);
 
   const play = useCallback(() => {
-    ensureAudioCtx();
+    const ctx = ensureAudioCtx();
+    updatePitchOffset(pitch, speed);
     if (audioRef.current) {
+      if (!audioSourceRef.current) {
+        audioSourceRef.current = ctx.createMediaElementSource(audioRef.current);
+        audioSourceRef.current.connect(masterGainRef.current);
+      }
       audioRef.current.play().catch(() => {});
     }
     if (stems.some(s => s.url)) {
@@ -194,7 +237,7 @@ export function PlayerProvider({ children }) {
       if (!audioRef.current) startStemTick();
     }
     setIsPlaying(true);
-  }, [stems, stemVolumes, ensureAudioCtx, startStemSources, startStemTick]);
+  }, [stems, stemVolumes, ensureAudioCtx, startStemSources, startStemTick, pitch, speed, updatePitchOffset]);
 
   const pause = useCallback(() => {
     if (audioRef.current) audioRef.current.pause();
@@ -240,6 +283,22 @@ export function PlayerProvider({ children }) {
     if (masterGainRef.current) masterGainRef.current.gain.value = vol;
   }, []);
 
+  const changeSpeed = useCallback((newSpeed) => {
+    setSpeed(newSpeed);
+    if (audioRef.current) {
+      audioRef.current.playbackRate = newSpeed;
+    }
+    stemSourcesRef.current.forEach(src => {
+      if (src) src.playbackRate.value = newSpeed;
+    });
+    updatePitchOffset(pitch, newSpeed);
+  }, [pitch, speed, updatePitchOffset]);
+
+  const changePitch = useCallback((newPitch) => {
+    setPitch(newPitch);
+    updatePitchOffset(newPitch, speed);
+  }, [speed, updatePitchOffset]);
+
   // X button — stop and dismiss mini player
   const stop = useCallback(() => {
     currentSongIdRef.current = null;
@@ -257,11 +316,13 @@ export function PlayerProvider({ children }) {
     <PlayerContext.Provider value={{
       currentSong, isPlaying, currentTime, duration, volume,
       stems, stemVolumes, stemMasterVolume, stemsLoaded,
+      speed, pitch,
       hasMainAudio: !!currentSong?.audio_url,
       hasStems: stems.some(s => s.url),
       loadSong, updateStems,
       play, pause, togglePlay, seek,
       changeVolume, changeStemVolume, changeStemMasterVolume,
+      changeSpeed, changePitch,
       stop,
     }}>
       {children}
