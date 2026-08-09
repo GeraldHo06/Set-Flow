@@ -14,7 +14,9 @@ export function PlayerProvider({ children }) {
   const stemOffsetRef = useRef(0);
   const rafRef = useRef(null);
   const currentSongIdRef = useRef(null);
-  const pitchShifterRef = useRef(null);
+  const stemsPitchShifterRef = useRef(null);
+  const mainPitchShifterRef = useRef(null);
+  const mainAudioGainRef = useRef(null);
   const audioSourceRef = useRef(null);
 
   const [currentSong, setCurrentSong] = useState(null);
@@ -34,15 +36,21 @@ export function PlayerProvider({ children }) {
       audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
     }
     if (audioCtxRef.current.state === 'suspended') audioCtxRef.current.resume();
+    
+    // Setup stems routing
     if (!masterGainRef.current) {
       masterGainRef.current = audioCtxRef.current.createGain();
       masterGainRef.current.gain.value = 1;
-      
-      // Initialize pitch shifter
-      pitchShifterRef.current = new Jungle(audioCtxRef.current);
-      
-      // Initially bypassed (since speed=1, pitch=0)
+      stemsPitchShifterRef.current = new Jungle(audioCtxRef.current);
       masterGainRef.current.connect(audioCtxRef.current.destination);
+    }
+    
+    // Setup main audio routing
+    if (!mainAudioGainRef.current) {
+      mainAudioGainRef.current = audioCtxRef.current.createGain();
+      mainAudioGainRef.current.gain.value = 1;
+      mainPitchShifterRef.current = new Jungle(audioCtxRef.current);
+      mainAudioGainRef.current.connect(audioCtxRef.current.destination);
     }
     return audioCtxRef.current;
   }, []);
@@ -128,24 +136,51 @@ export function PlayerProvider({ children }) {
     rafRef.current = requestAnimationFrame(tick);
   }, []);
 
+  const routeAudioElement = useCallback(() => {
+    const ctx = ensureAudioCtx();
+    if (audioRef.current && !audioSourceRef.current) {
+      audioRef.current.preservesPitch = false;
+      audioRef.current.mozPreservesPitch = false;
+      audioRef.current.webkitPreservesPitch = false;
+
+      audioSourceRef.current = ctx.createMediaElementSource(audioRef.current);
+      audioSourceRef.current.connect(mainAudioGainRef.current);
+    }
+  }, [ensureAudioCtx]);
+
   const updatePitchOffset = useCallback((pitchVal, speedVal) => {
     const ctx = audioCtxRef.current;
-    if (!ctx || !pitchShifterRef.current || !masterGainRef.current) return;
+    if (!ctx || !mainAudioGainRef.current || !masterGainRef.current || !mainPitchShifterRef.current || !stemsPitchShifterRef.current) return;
 
-    // Calculate speed-induced pitch shift on stem buffers (semitones)
+    const isRouted = !!audioSourceRef.current;
     const speedShift = Math.log2(speedVal) * 12;
-    const netShift = pitchVal - speedShift;
 
-    // Bypass pitch shifter if net shift is very close to 0 to preserve original quality
-    if (Math.abs(netShift) < 0.01) {
+    // 1. Update Main Audio Pitch Shift
+    // If routed, main audio behaves like a tape recorder (ignores preservesPitch), so we must compensate for speed.
+    // If NOT routed, main audio preserves pitch natively in the browser, so we do NOT compensate for speed.
+    const mainShift = isRouted ? (pitchVal - speedShift) : pitchVal;
+    if (Math.abs(mainShift) < 0.01) {
+      mainAudioGainRef.current.disconnect();
+      mainAudioGainRef.current.connect(ctx.destination);
+    } else {
+      mainAudioGainRef.current.disconnect();
+      mainAudioGainRef.current.connect(mainPitchShifterRef.current.input);
+      mainPitchShifterRef.current.output.disconnect();
+      mainPitchShifterRef.current.output.connect(ctx.destination);
+      mainPitchShifterRef.current.setPitchOffset(getMultiplier(mainShift));
+    }
+
+    // 2. Update Stems Pitch Shift (needs speed compensation as stems don't preserve pitch natively)
+    const stemsShift = pitchVal - speedShift;
+    if (Math.abs(stemsShift) < 0.01) {
       masterGainRef.current.disconnect();
       masterGainRef.current.connect(ctx.destination);
     } else {
       masterGainRef.current.disconnect();
-      masterGainRef.current.connect(pitchShifterRef.current.input);
-      pitchShifterRef.current.output.disconnect();
-      pitchShifterRef.current.output.connect(ctx.destination);
-      pitchShifterRef.current.setPitchOffset(getMultiplier(netShift));
+      masterGainRef.current.connect(stemsPitchShifterRef.current.input);
+      stemsPitchShifterRef.current.output.disconnect();
+      stemsPitchShifterRef.current.output.connect(ctx.destination);
+      stemsPitchShifterRef.current.setPitchOffset(getMultiplier(stemsShift));
     }
   }, []);
 
@@ -179,9 +214,9 @@ export function PlayerProvider({ children }) {
     if (song.audio_url) {
       const audio = new Audio(song.audio_url);
       audio.crossOrigin = "anonymous";
-      audio.preservesPitch = false;
-      audio.mozPreservesPitch = false;
-      audio.webkitPreservesPitch = false;
+      audio.preservesPitch = true;
+      audio.mozPreservesPitch = true;
+      audio.webkitPreservesPitch = true;
       audio.volume = volume;
       audio.playbackRate = speed; // Apply active speed
       audio.onloadedmetadata = () => {
@@ -222,13 +257,17 @@ export function PlayerProvider({ children }) {
   }, [loadStemBuffers]);
 
   const play = useCallback(() => {
-    const ctx = ensureAudioCtx();
+    ensureAudioCtx();
+    
+    // Dynamically route if pitch is shifted or stems are present
+    const needsRouting = pitch !== 0 || stems.some(s => s.url);
+    if (needsRouting) {
+      routeAudioElement();
+    }
+    
     updatePitchOffset(pitch, speed);
+    
     if (audioRef.current) {
-      if (!audioSourceRef.current) {
-        audioSourceRef.current = ctx.createMediaElementSource(audioRef.current);
-        audioSourceRef.current.connect(masterGainRef.current);
-      }
       audioRef.current.play().catch(() => {});
     }
     if (stems.some(s => s.url)) {
@@ -237,7 +276,7 @@ export function PlayerProvider({ children }) {
       if (!audioRef.current) startStemTick();
     }
     setIsPlaying(true);
-  }, [stems, stemVolumes, ensureAudioCtx, startStemSources, startStemTick, pitch, speed, updatePitchOffset]);
+  }, [stems, stemVolumes, ensureAudioCtx, startStemSources, startStemTick, pitch, speed, updatePitchOffset, routeAudioElement]);
 
   const pause = useCallback(() => {
     if (audioRef.current) audioRef.current.pause();
@@ -292,12 +331,15 @@ export function PlayerProvider({ children }) {
       if (src) src.playbackRate.value = newSpeed;
     });
     updatePitchOffset(pitch, newSpeed);
-  }, [pitch, speed, updatePitchOffset]);
+  }, [pitch, updatePitchOffset]);
 
   const changePitch = useCallback((newPitch) => {
     setPitch(newPitch);
+    if (newPitch !== 0 || stems.some(s => s.url)) {
+      routeAudioElement();
+    }
     updatePitchOffset(newPitch, speed);
-  }, [speed, updatePitchOffset]);
+  }, [speed, stems, routeAudioElement, updatePitchOffset]);
 
   // X button — stop and dismiss mini player
   const stop = useCallback(() => {
