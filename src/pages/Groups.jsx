@@ -56,6 +56,13 @@ export default function Groups() {
 
   const joinGroupMutation = useMutation({
     mutationFn: async (groupId) => {
+      // 1. Try calling the join_group RPC function first
+      const { data: rpcData, error: rpcError } = await supabase.rpc('join_group', { target_group_id: groupId });
+      if (!rpcError) {
+        return rpcData;
+      }
+
+      // If RPC doesn't exist yet, fallback to client-side table operations
       const { data: { user } } = await supabase.auth.getUser();
       const { data: existing } = await supabase
         .from('group_members')
@@ -73,13 +80,13 @@ export default function Groups() {
       const { error } = await supabase
         .from('group_members')
         .insert({ group_id: groupId, profile_id: user.id, role: 'member' });
-      if (error) throw error;
+      if (error) throw rpcError || error;
       return groupExists;
     },
     onSuccess: (group) => {
       queryClient.invalidateQueries({ queryKey: ['my-groups'] });
       setJoinGroupId('');
-      toast({ title: `Joined ${group.name}!`, description: "You can now view shared files." });
+      toast({ title: `Joined ${group?.name || 'Group'}!`, description: "You can now view shared files." });
     },
     onError: (error) => {
       toast({ variant: "destructive", title: "Unable to join group", description: error.message });
